@@ -54,7 +54,7 @@
             border-radius: 4px;
             overflow-y: auto;
             z-index: 1000;
-            display: block; /* Changed from 'none' to display by default */
+            display: block; /* Show by default */
         }
 
         .logEntry {
@@ -105,50 +105,63 @@
     <meta itemprop="image" content="screenshot.png">
     <meta name="description" content="made with cables"/>
 
-    <!-- Import map for LUKSO UP Provider -->
-    <script type="importmap">
-        { "imports": { "@lukso/up-provider": "https://cdn.jsdelivr.net/npm/@lukso/up-provider@0.3.5/dist/index.mjs" } }
+    <!-- EARLY LOGGING: Console log to confirm script execution begins -->
+    <script>
+        console.log("[LUKSO] HTML document starting to load");
     </script>
 </head>
 <body>
     <canvas id="glcanvas" width="100vw" height="100vh" tabindex="1"></canvas>
     <div id="status">Loading...</div>
     
-    <!-- Debug log panel - now shown by default -->
+    <!-- Debug log panel - shown by default -->
     <button id="toggleLog">Hide Debug Log</button>
     <div id="logPanel"></div>
     
     <!-- Create global variables to store connection information -->
     <script>
+        console.log("[LUKSO] Beginning main script initialization");
+        
+        // Detect if running in iframe
+        const isInIframe = window.self !== window.top;
+        console.log(`[LUKSO] Running in iframe: ${isInIframe}`);
+        
         // Global namespace for our integration
         window.LUKSO_INTEGRATION = {
             upAddress: null,
             addressUpdated: false,
             debug: true,
             initTime: Date.now(), // Add initialization timestamp
+            isInIframe: isInIframe, // Store iframe status
             
             // Visual logging system
             logPanel: null,
             logEntries: [],
-            maxLogEntries: 100, // Increased from 50
+            maxLogEntries: 100,
             
             // Initialize logging
             initLogging: function() {
+                console.log("[LUKSO] Initializing logging system");
                 this.logPanel = document.getElementById('logPanel');
                 const toggleButton = document.getElementById('toggleLog');
                 
-                toggleButton.addEventListener('click', () => {
-                    if (this.logPanel.style.display === 'none') {
-                        this.logPanel.style.display = 'block';
-                        toggleButton.textContent = 'Hide Debug Log';
-                    } else {
-                        this.logPanel.style.display = 'none';
-                        toggleButton.textContent = 'Show Debug Log';
-                    }
-                });
-                
-                // Add initial log entry with timestamp
-                this.log(`Logging system initialized (${new Date().toISOString()})`);
+                if (this.logPanel && toggleButton) {
+                    toggleButton.addEventListener('click', () => {
+                        if (this.logPanel.style.display === 'none') {
+                            this.logPanel.style.display = 'block';
+                            toggleButton.textContent = 'Hide Debug Log';
+                        } else {
+                            this.logPanel.style.display = 'none';
+                            toggleButton.textContent = 'Show Debug Log';
+                        }
+                    });
+                    
+                    // Add initial log entry with timestamp
+                    this.log(`Logging system initialized (${new Date().toISOString()})`);
+                    this.log(`Running in iframe: ${this.isInIframe}`, this.isInIframe ? "warning" : "info");
+                } else {
+                    console.error("[LUKSO] Failed to initialize logging - DOM elements not found");
+                }
             },
             
             // Enhanced log function with timestamps
@@ -278,6 +291,7 @@
         
         // Initialize logging system when DOM is ready
         document.addEventListener('DOMContentLoaded', function() {
+            console.log("[LUKSO] DOM Content Loaded event fired");
             LUKSO_INTEGRATION.initLogging();
         });
     </script>
@@ -287,32 +301,53 @@
     
     <!-- Standard cables initialization -->
     <script type="text/javascript">
+        console.log("[LUKSO] CABLES initialization script started");
+        
         function showError(initiator,...args) {
             CABLES.logErrorConsole("[" + initiator + "]", ...args);
-            LUKSO_INTEGRATION.log(`CABLES Error [${initiator}]: ${args.join(', ')}`, "error");
+            if (window.LUKSO_INTEGRATION) {
+                LUKSO_INTEGRATION.log(`CABLES Error [${initiator}]: ${args.join(', ')}`, "error");
+            } else {
+                console.error(`[LUKSO] CABLES Error [${initiator}]:`, ...args);
+            }
         }
 
         function patchInitialized(patch) {
-            LUKSO_INTEGRATION.log("Patch initialized - examining patch structure");
-            LUKSO_INTEGRATION.inspectPatch(patch);
-            LUKSO_INTEGRATION.log("Attempting to update address after init");
-            tryUpdateAddress(patch);
+            console.log("[LUKSO] Patch initialized callback fired");
+            if (window.LUKSO_INTEGRATION) {
+                LUKSO_INTEGRATION.log("Patch initialized - examining patch structure");
+                LUKSO_INTEGRATION.inspectPatch(patch);
+                LUKSO_INTEGRATION.log("Attempting to update address after init");
+                tryUpdateAddress(patch);
+            } else {
+                console.warn("[LUKSO] LUKSO_INTEGRATION not available in patchInitialized");
+            }
         }
 
         function patchFinishedLoading(patch) {
-            LUKSO_INTEGRATION.log("Patch finished loading - examining patch again");
-            LUKSO_INTEGRATION.inspectPatch(patch);
-            LUKSO_INTEGRATION.log("Attempting to update address after load");
-            tryUpdateAddress(patch);
-            
-            // Also try again after a delay to ensure everything is fully loaded
-            setTimeout(() => {
-                LUKSO_INTEGRATION.log("Delayed address update attempt (1000ms)");
+            console.log("[LUKSO] Patch finished loading callback fired");
+            if (window.LUKSO_INTEGRATION) {
+                LUKSO_INTEGRATION.log("Patch finished loading - examining patch again");
+                LUKSO_INTEGRATION.inspectPatch(patch);
+                LUKSO_INTEGRATION.log("Attempting to update address after load");
                 tryUpdateAddress(patch);
-            }, 1000);
+                
+                // Also try again after a delay to ensure everything is fully loaded
+                setTimeout(() => {
+                    LUKSO_INTEGRATION.log("Delayed address update attempt (1000ms)");
+                    tryUpdateAddress(patch);
+                }, 1000);
+            } else {
+                console.warn("[LUKSO] LUKSO_INTEGRATION not available in patchFinishedLoading");
+            }
         }
         
         function tryUpdateAddress(patch) {
+            if (!window.LUKSO_INTEGRATION) {
+                console.error("[LUKSO] LUKSO_INTEGRATION not available in tryUpdateAddress");
+                return;
+            }
+            
             LUKSO_INTEGRATION.log("----- UPDATING ADDRESS -----");
             
             if (!LUKSO_INTEGRATION.upAddress) {
@@ -323,15 +358,7 @@
             LUKSO_INTEGRATION.log(`Attempting to update Address variable with: ${LUKSO_INTEGRATION.upAddress}`);
             
             try {
-                // Try direct access to the Address variable
-                if (patch.variables && patch.variables.Address) {
-                    patch.variables.Address.set(LUKSO_INTEGRATION.upAddress);
-                    LUKSO_INTEGRATION.log("Updated Address via patch.variables", "success");
-                    LUKSO_INTEGRATION.addressUpdated = true;
-                    return true;
-                }
-                
-                // Try using getVar method
+                // Try using getVar method (which we know works from the logs)
                 try {
                     const addressVar = patch.getVar("Address");
                     if (addressVar) {
@@ -357,6 +384,14 @@
                     LUKSO_INTEGRATION.log(`getVar(lowercase) error: ${varErr.message}`, "error");
                 }
                 
+                // Try direct access to the Address variable
+                if (patch.variables && patch.variables.Address) {
+                    patch.variables.Address.set(LUKSO_INTEGRATION.upAddress);
+                    LUKSO_INTEGRATION.log("Updated Address via patch.variables", "success");
+                    LUKSO_INTEGRATION.addressUpdated = true;
+                    return true;
+                }
+                
                 LUKSO_INTEGRATION.log("Could not find Address variable in patch", "error");
                 return false;
             } catch (err) {
@@ -366,7 +401,10 @@
         }
 
         document.addEventListener("CABLES.jsLoaded", function (event) {
-            LUKSO_INTEGRATION.log("CABLES.jsLoaded event fired");
+            console.log("[LUKSO] CABLES.jsLoaded event fired");
+            if (window.LUKSO_INTEGRATION) {
+                LUKSO_INTEGRATION.log("CABLES.jsLoaded event fired");
+            }
             
             CABLES.patch = new CABLES.Patch({
                 patch: CABLES.exportedPatch,
@@ -386,116 +424,243 @@
         document.getElementById('glcanvas').addEventListener('touchmove', (e)=>{ e.preventDefault(); }, false);
     </script>
     
-    <!-- LUKSO wallet integration -->
-    <script type="module">
-        import { createClientUPProvider } from '@lukso/up-provider';
+    <!-- EARLY LOADING: Load the LUKSO provider directly using a regular script tag -->
+    <script>
+        console.log("[LUKSO] Loading UP Provider script directly");
         
-        // Create the LUKSO UP provider
-        const provider = createClientUPProvider();
-        const status = document.getElementById('status');
+        function loadLuksoProvider() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@lukso/up-provider@0.3.5/dist/up-provider.umd.js';
+                script.onload = () => {
+                    console.log("[LUKSO] UP Provider script loaded successfully");
+                    resolve();
+                };
+                script.onerror = (err) => {
+                    console.error("[LUKSO] Failed to load UP Provider script:", err);
+                    reject(err);
+                };
+                document.head.appendChild(script);
+            });
+        }
         
-        // Log when provider is created
-        LUKSO_INTEGRATION.log("UP Provider created", "success");
-
-        async function initWallet() {
-            LUKSO_INTEGRATION.log("==== initWallet started ====");
+        // Start loading immediately
+        loadLuksoProvider().then(() => {
+            console.log("[LUKSO] Provider loaded, initializing wallet");
+            // Initialize wallet once script is loaded
+            initLuksoWallet();
+        }).catch(err => {
+            console.error("[LUKSO] Provider loading failed:", err);
+            document.getElementById('status').textContent = 'LUKSO provider failed to load';
+        });
+    </script>
+    
+    <!-- LUKSO wallet integration using direct UMD approach -->
+    <script>
+        console.log("[LUKSO] Wallet integration script defined");
+        
+        // Define the wallet initialization function
+        function initLuksoWallet() {
+            console.log("[LUKSO] initLuksoWallet function called");
+            
+            // Ensure we have the provider loaded
+            if (!window.LuksoUPProvider) {
+                console.error("[LUKSO] LuksoUPProvider not found in global scope");
+                if (window.LUKSO_INTEGRATION) {
+                    LUKSO_INTEGRATION.log("LuksoUPProvider not found in global scope", "error");
+                }
+                return;
+            }
             
             try {
-                // Log chain ID request
-                LUKSO_INTEGRATION.log("Requesting chain ID...");
-                let chainId;
-                try {
-                    chainId = await provider.request({ method: 'eth_chainId' });
-                    LUKSO_INTEGRATION.log(`Chain ID response: ${chainId} (decimal: ${parseInt(chainId, 16)})`, "success");
-                } catch (chainErr) {
-                    LUKSO_INTEGRATION.log(`Chain ID request failed: ${chainErr.message}`, "error");
-                    LUKSO_INTEGRATION.log(chainErr.stack || "No stack trace available");
+                // Create the provider (from UMD bundle)
+                const provider = LuksoUPProvider.createClientUPProvider();
+                const status = document.getElementById('status');
+                
+                console.log("[LUKSO] Provider created successfully");
+                if (window.LUKSO_INTEGRATION) {
+                    LUKSO_INTEGRATION.log("UP Provider created", "success");
                 }
                 
-                // Log accounts request
-                LUKSO_INTEGRATION.log("Requesting accounts...");
-                let accounts;
-                try {
-                    accounts = await provider.request({ method: 'eth_accounts' });
-                    LUKSO_INTEGRATION.log(`Accounts response received with ${accounts.length} accounts`);
-                    LUKSO_INTEGRATION.log("Raw accounts response:", "raw");
-                    LUKSO_INTEGRATION.log(accounts);
-                } catch (acctErr) {
-                    LUKSO_INTEGRATION.log(`Accounts request failed: ${acctErr.message}`, "error");
-                    LUKSO_INTEGRATION.log(acctErr.stack || "No stack trace available");
-                    accounts = [];
-                }
-
-                if (accounts && accounts.length) {
-                    // Store the UP address
-                    LUKSO_INTEGRATION.upAddress = accounts[0];
-                    LUKSO_INTEGRATION.log(accounts[0], "address");
-                    status.textContent = `Connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`;
-                    
-                    // Try to update the patch if it's already loaded
-                    if (window.CABLES && window.CABLES.patch) {
-                        LUKSO_INTEGRATION.log("CABLES patch detected, updating address...");
-                        tryUpdateAddress(window.CABLES.patch);
-                    } else {
-                        LUKSO_INTEGRATION.log("CABLES patch not ready yet. Address will be set once patch loads.", "warning");
+                async function initWallet() {
+                    console.log("[LUKSO] initWallet function started");
+                    if (window.LUKSO_INTEGRATION) {
+                        LUKSO_INTEGRATION.log("==== initWallet started ====");
                     }
-                } else {
-                    status.textContent = 'Waiting for wallet...';
-                    LUKSO_INTEGRATION.log("No accounts found - waiting for wallet connection", "warning");
                     
-                    // Try requesting accounts with eth_requestAccounts method
-                    LUKSO_INTEGRATION.log("Trying eth_requestAccounts as fallback...");
                     try {
-                        const requestedAccounts = await provider.request({ method: 'eth_requestAccounts' });
-                        LUKSO_INTEGRATION.log(`eth_requestAccounts returned ${requestedAccounts.length} accounts`);
+                        // Log chain ID request
+                        console.log("[LUKSO] Requesting chain ID...");
+                        if (window.LUKSO_INTEGRATION) {
+                            LUKSO_INTEGRATION.log("Requesting chain ID...");
+                        }
                         
-                        if (requestedAccounts.length > 0) {
-                            LUKSO_INTEGRATION.upAddress = requestedAccounts[0];
-                            LUKSO_INTEGRATION.log(requestedAccounts[0], "address");
-                            status.textContent = `Connected: ${requestedAccounts[0].substring(0, 6)}...${requestedAccounts[0].substring(requestedAccounts[0].length - 4)}`;
-                            
-                            // Try to update the patch
-                            if (window.CABLES && window.CABLES.patch) {
-                                tryUpdateAddress(window.CABLES.patch);
+                        let chainId;
+                        try {
+                            chainId = await provider.request({ method: 'eth_chainId' });
+                            console.log(`[LUKSO] Chain ID response: ${chainId}`);
+                            if (window.LUKSO_INTEGRATION) {
+                                LUKSO_INTEGRATION.log(`Chain ID response: ${chainId} (decimal: ${parseInt(chainId, 16)})`, "success");
+                            }
+                        } catch (chainErr) {
+                            console.error("[LUKSO] Chain ID request failed:", chainErr);
+                            if (window.LUKSO_INTEGRATION) {
+                                LUKSO_INTEGRATION.log(`Chain ID request failed: ${chainErr.message}`, "error");
+                                LUKSO_INTEGRATION.log(chainErr.stack || "No stack trace available");
                             }
                         }
-                    } catch (reqErr) {
-                        LUKSO_INTEGRATION.log(`eth_requestAccounts failed: ${reqErr.message}`, "error");
+                        
+                        // Log accounts request
+                        console.log("[LUKSO] Requesting accounts...");
+                        if (window.LUKSO_INTEGRATION) {
+                            LUKSO_INTEGRATION.log("Requesting accounts...");
+                        }
+                        
+                        let accounts;
+                        try {
+                            accounts = await provider.request({ method: 'eth_accounts' });
+                            console.log(`[LUKSO] Accounts response:`, accounts);
+                            if (window.LUKSO_INTEGRATION) {
+                                LUKSO_INTEGRATION.log(`Accounts response received with ${accounts.length} accounts`);
+                                if (accounts && accounts.length > 0) {
+                                    LUKSO_INTEGRATION.log("Raw accounts response:", "raw");
+                                    LUKSO_INTEGRATION.log(accounts);
+                                }
+                            }
+                        } catch (acctErr) {
+                            console.error("[LUKSO] Accounts request failed:", acctErr);
+                            if (window.LUKSO_INTEGRATION) {
+                                LUKSO_INTEGRATION.log(`Accounts request failed: ${acctErr.message}`, "error");
+                                LUKSO_INTEGRATION.log(acctErr.stack || "No stack trace available");
+                            }
+                            accounts = [];
+                        }
+
+                        if (accounts && accounts.length) {
+                            // Store the UP address
+                            if (window.LUKSO_INTEGRATION) {
+                                LUKSO_INTEGRATION.upAddress = accounts[0];
+                                LUKSO_INTEGRATION.log(accounts[0], "address");
+                            }
+                            
+                            status.textContent = `Connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`;
+                            
+                            // Try to update the patch if it's already loaded
+                            if (window.CABLES && window.CABLES.patch) {
+                                console.log("[LUKSO] CABLES patch detected, updating address...");
+                                if (window.LUKSO_INTEGRATION) {
+                                    LUKSO_INTEGRATION.log("CABLES patch detected, updating address...");
+                                    tryUpdateAddress(window.CABLES.patch);
+                                }
+                            } else {
+                                console.log("[LUKSO] CABLES patch not ready yet");
+                                if (window.LUKSO_INTEGRATION) {
+                                    LUKSO_INTEGRATION.log("CABLES patch not ready yet. Address will be set once patch loads.", "warning");
+                                }
+                            }
+                        } else {
+                            status.textContent = 'Waiting for wallet...';
+                            console.log("[LUKSO] No accounts found - trying eth_requestAccounts");
+                            if (window.LUKSO_INTEGRATION) {
+                                LUKSO_INTEGRATION.log("No accounts found - waiting for wallet connection", "warning");
+                            }
+                            
+                            // Try requesting accounts with eth_requestAccounts method
+                            console.log("[LUKSO] Trying eth_requestAccounts as fallback...");
+                            if (window.LUKSO_INTEGRATION) {
+                                LUKSO_INTEGRATION.log("Trying eth_requestAccounts as fallback...");
+                            }
+                            
+                            try {
+                                const requestedAccounts = await provider.request({ method: 'eth_requestAccounts' });
+                                console.log(`[LUKSO] eth_requestAccounts returned:`, requestedAccounts);
+                                if (window.LUKSO_INTEGRATION) {
+                                    LUKSO_INTEGRATION.log(`eth_requestAccounts returned ${requestedAccounts.length} accounts`);
+                                }
+                                
+                                if (requestedAccounts.length > 0) {
+                                    if (window.LUKSO_INTEGRATION) {
+                                        LUKSO_INTEGRATION.upAddress = requestedAccounts[0];
+                                        LUKSO_INTEGRATION.log(requestedAccounts[0], "address");
+                                    }
+                                    
+                                    status.textContent = `Connected: ${requestedAccounts[0].substring(0, 6)}...${requestedAccounts[0].substring(requestedAccounts[0].length - 4)}`;
+                                    
+                                    // Try to update the patch
+                                    if (window.CABLES && window.CABLES.patch) {
+                                        tryUpdateAddress(window.CABLES.patch);
+                                    }
+                                }
+                            } catch (reqErr) {
+                                console.error("[LUKSO] eth_requestAccounts failed:", reqErr);
+                                if (window.LUKSO_INTEGRATION) {
+                                    LUKSO_INTEGRATION.log(`eth_requestAccounts failed: ${reqErr.message}`, "error");
+                                }
+                            }
+                        }
+                        
+                        console.log("[LUKSO] initWallet completed");
+                        if (window.LUKSO_INTEGRATION) {
+                            LUKSO_INTEGRATION.log("==== initWallet completed ====");
+                        }
+                    } catch (error) {
+                        console.error("[LUKSO] Error initializing wallet:", error);
+                        if (window.LUKSO_INTEGRATION) {
+                            LUKSO_INTEGRATION.log(`Error initializing wallet: ${error.message}`, "error");
+                            LUKSO_INTEGRATION.log(error.stack || "No stack trace available");
+                        }
+                        status.textContent = 'Wallet connection error';
                     }
                 }
+
+                // Log when setting up event listeners
+                console.log("[LUKSO] Setting up wallet event listeners");
+                if (window.LUKSO_INTEGRATION) {
+                    LUKSO_INTEGRATION.log("Setting up wallet event listeners");
+                }
                 
-                LUKSO_INTEGRATION.log("==== initWallet completed ====");
-            } catch (error) {
-                LUKSO_INTEGRATION.log(`Error initializing wallet: ${error.message}`, "error");
-                LUKSO_INTEGRATION.log(error.stack || "No stack trace available");
-                status.textContent = 'Wallet connection error';
+                // Set up event listeners for wallet changes with logging
+                provider.on('accountsChanged', (accounts) => {
+                    console.log(`[LUKSO] accountsChanged event fired:`, accounts);
+                    if (window.LUKSO_INTEGRATION) {
+                        LUKSO_INTEGRATION.log(`accountsChanged event fired with ${accounts ? accounts.length : 0} accounts`);
+                    }
+                    initWallet();
+                });
+                
+                provider.on('chainChanged', (chainId) => {
+                    console.log(`[LUKSO] chainChanged event fired: ${chainId}`);
+                    if (window.LUKSO_INTEGRATION) {
+                        LUKSO_INTEGRATION.log(`chainChanged event fired: ${chainId}`);
+                    }
+                    initWallet();
+                });
+                
+                provider.on('contextAccountsChanged', (accounts) => {
+                    console.log(`[LUKSO] contextAccountsChanged event fired:`, accounts);
+                    if (window.LUKSO_INTEGRATION) {
+                        LUKSO_INTEGRATION.log(`contextAccountsChanged event fired with ${accounts ? accounts.length : 0} accounts`);
+                    }
+                    initWallet(); 
+                });
+
+                // Initialize wallet after a short delay
+                setTimeout(() => {
+                    console.log("[LUKSO] Calling initWallet after short delay");
+                    if (window.LUKSO_INTEGRATION) {
+                        LUKSO_INTEGRATION.log("Calling initWallet after short delay");
+                    }
+                    initWallet();
+                }, 100);
+                
+            } catch (err) {
+                console.error("[LUKSO] Error in initLuksoWallet:", err);
+                if (window.LUKSO_INTEGRATION) {
+                    LUKSO_INTEGRATION.log(`Error initializing LUKSO wallet: ${err.message}`, "error");
+                }
+                document.getElementById('status').textContent = 'LUKSO wallet initialization error';
             }
         }
-
-        // Log when setting up event listeners
-        LUKSO_INTEGRATION.log("Setting up wallet event listeners");
-        
-        // Set up event listeners for wallet changes with logging
-        provider.on('accountsChanged', (accounts) => {
-            LUKSO_INTEGRATION.log(`accountsChanged event fired with ${accounts ? accounts.length : 0} accounts`);
-            initWallet();
-        });
-        
-        provider.on('chainChanged', (chainId) => {
-            LUKSO_INTEGRATION.log(`chainChanged event fired: ${chainId}`);
-            initWallet();
-        });
-        
-        provider.on('contextAccountsChanged', (accounts) => {
-            LUKSO_INTEGRATION.log(`contextAccountsChanged event fired with ${accounts ? accounts.length : 0} accounts`);
-            initWallet(); 
-        });
-
-        // Initialize wallet with delay to ensure DOM is ready
-        setTimeout(() => {
-            LUKSO_INTEGRATION.log("Calling initWallet after short delay");
-            initWallet();
-        }, 100);
     </script>
 </body>
 </html>
