@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Memory Traces</title>
+    <title>Memory Traces v24</title>
     <style>
         body {
             margin: 0;
             background-color: #000;
             color: #fff;
             font-family: Helvetica, Arial, sans-serif;
-            overflow: hidden; /* disable scrolling / rubberband effect on mobile */
+            overflow: hidden;
             height:100vh;
         }
 
@@ -19,7 +19,6 @@
         }
 
         * {
-            /* disable on touch highlights of html elements, especially on mobile! */
             -webkit-tap-highlight-color: transparent;
             -webkit-touch-callout: none;
             -webkit-user-select: none;
@@ -28,7 +27,6 @@
             user-select: none;
         }
 
-        /* Status indicator style */
         #status {
             position: absolute;
             top: 10px;
@@ -43,8 +41,8 @@
 
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1">
-    <meta itemprop="name" content="Memory Traces">
-    <meta itemprop="description" content="by Jan Ove Hennig 2025">
+    <meta itemprop="name" content="Memory Traces v24">
+    <meta itemprop="description" content="made with cables">
     <meta itemprop="image" content="screenshot.png">
     <meta name="description" content="made with cables"/>
 
@@ -57,8 +55,10 @@
     <canvas id="glcanvas" width="100vw" height="100vh" tabindex="1"></canvas>
     <div id="status">Loading...</div>
     
-    <script type="text/javascript" src="js/patch.js" async></script>
+    <!-- First load the patch.js file -->
+    <script type="text/javascript" src="js/patch.js"></script>
     
+    <!-- Then handle the LUKSO integration after patch.js is loaded -->
     <script type="module">
         import { createClientUPProvider } from '@lukso/up-provider';
 
@@ -81,7 +81,7 @@
                     status.textContent = `Connected: ${window.upAddress.substring(0, 6)}...${window.upAddress.substring(window.upAddress.length - 4)}`;
                     
                     // Update the patch if it's already loaded
-                    updatePatchAddress();
+                    attemptUpdatePatchAddress();
                 } else {
                     status.textContent = 'Waiting for wallet...';
                 }
@@ -91,17 +91,48 @@
             }
         }
 
+        function attemptUpdatePatchAddress() {
+            console.log("Attempting to update patch address...");
+            // Try multiple times with increasing delays to ensure the patch is fully loaded
+            setTimeout(() => updatePatchAddress(), 500);  // Try after 0.5s
+            setTimeout(() => updatePatchAddress(), 1500); // Try again after 1.5s
+            setTimeout(() => updatePatchAddress(), 3000); // Try again after 3s
+        }
+
         function updatePatchAddress() {
             // Check if patch is initialized and address variable exists
-            if (window.upAddress && CABLES.patch) {
+            if (window.upAddress && window.CABLES && window.CABLES.patch) {
+                console.log("CABLES patch found, looking for Address variable");
+                
                 // Look for the variable with the name "Address" (without the hash)
-                const addressVar = CABLES.patch.getVar("Address");
+                const addressVar = window.CABLES.patch.getVar("Address");
+                
                 if (addressVar) {
                     // Update the Address variable
                     addressVar.set(window.upAddress);
-                    console.log("Updated patch with UP address:", window.upAddress);
+                    console.log("✅ Successfully updated patch with UP address:", window.upAddress);
+                    
+                    // If needed, you can also try to trigger specific operators
+                    const updateOp = window.CABLES.patch.getOpById("update");
+                    if (updateOp) {
+                        updateOp.trigger();
+                        console.log("Triggered update operator");
+                    }
                 } else {
-                    console.log("Variable 'Address' not found in patch");
+                    console.log("⚠️ Variable 'Address' not found in patch. Available variables:");
+                    // List all available variables to help debugging
+                    if (window.CABLES.patch.getVars) {
+                        const vars = window.CABLES.patch.getVars();
+                        console.log(vars);
+                    }
+                }
+            } else {
+                console.log("Waiting for CABLES patch to initialize...");
+                if (window.upAddress) {
+                    console.log("UP Address is available:", window.upAddress);
+                }
+                if (window.CABLES) {
+                    console.log("CABLES is available but patch may not be initialized yet");
                 }
             }
         }
@@ -113,9 +144,6 @@
 
         // Initialize wallet
         initWallet();
-
-        // Make function available globally
-        window.updatePatchAddress = updatePatchAddress;
     </script>
 
     <script type="text/javascript">
@@ -125,6 +153,7 @@
 
         function patchInitialized(patch) {
             // Patch object is accessible, attempt to update the address
+            console.log("Patch initialized - attempting to update address");
             if (window.updatePatchAddress) {
                 window.updatePatchAddress();
             }
@@ -132,12 +161,16 @@
 
         function patchFinishedLoading(patch) {
             // Patch is fully loaded, ensure address is set
+            console.log("Patch finished loading - attempting to update address");
             if (window.updatePatchAddress) {
                 window.updatePatchAddress();
             }
         }
 
         document.addEventListener("CABLES.jsLoaded", function (event) {
+            console.log("CABLES.jsLoaded event fired - creating patch");
+            window.CABLES = window.CABLES || {};
+            
             CABLES.patch = new CABLES.Patch({
                 patch: CABLES.exportedPatch,
                 "prefixAssetPath": "",
