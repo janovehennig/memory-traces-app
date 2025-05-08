@@ -54,7 +54,7 @@
             border-radius: 4px;
             overflow-y: auto;
             z-index: 1000;
-            display: none; /* Initially hidden */
+            display: block; /* Changed from 'none' to display by default */
         }
 
         .logEntry {
@@ -76,6 +76,11 @@
 
         .logError {
             color: #f00;
+            font-weight: bold;
+        }
+
+        .logWarning {
+            color: #ff8800;
             font-weight: bold;
         }
 
@@ -109,8 +114,8 @@
     <canvas id="glcanvas" width="100vw" height="100vh" tabindex="1"></canvas>
     <div id="status">Loading...</div>
     
-    <!-- Debug log panel -->
-    <button id="toggleLog">Show Debug Log</button>
+    <!-- Debug log panel - now shown by default -->
+    <button id="toggleLog">Hide Debug Log</button>
     <div id="logPanel"></div>
     
     <!-- Create global variables to store connection information -->
@@ -120,11 +125,12 @@
             upAddress: null,
             addressUpdated: false,
             debug: true,
+            initTime: Date.now(), // Add initialization timestamp
             
             // Visual logging system
             logPanel: null,
             logEntries: [],
-            maxLogEntries: 50,
+            maxLogEntries: 100, // Increased from 50
             
             // Initialize logging
             initLogging: function() {
@@ -132,7 +138,7 @@
                 const toggleButton = document.getElementById('toggleLog');
                 
                 toggleButton.addEventListener('click', () => {
-                    if (this.logPanel.style.display === 'none' || !this.logPanel.style.display) {
+                    if (this.logPanel.style.display === 'none') {
                         this.logPanel.style.display = 'block';
                         toggleButton.textContent = 'Hide Debug Log';
                     } else {
@@ -141,13 +147,17 @@
                     }
                 });
                 
-                // Add initial log entry
-                this.log("Logging system initialized");
+                // Add initial log entry with timestamp
+                this.log(`Logging system initialized (${new Date().toISOString()})`);
             },
             
-            // Log a message to both console and visual log
+            // Enhanced log function with timestamps
             log: function(msg, type = 'info') {
-                if (this.debug) console.log("[LUKSO]", msg);
+                const timestamp = Date.now();
+                const elapsed = timestamp - this.initTime;
+                const timeString = `[+${elapsed}ms]`;
+                
+                if (this.debug) console.log(`[LUKSO] ${timeString} ${msg}`);
                 
                 // Add to visual log
                 if (this.logPanel) {
@@ -156,13 +166,18 @@
                     entry.className = 'logEntry';
                     
                     if (type === 'address') {
-                        entry.innerHTML = `<span class="logAddress">▶ UP Address: ${msg}</span>`;
+                        entry.innerHTML = `${timeString} <span class="logAddress">▶ UP Address: ${msg}</span>`;
                     } else if (type === 'success') {
-                        entry.innerHTML = `<span class="logSuccess">✓ ${msg}</span>`;
+                        entry.innerHTML = `${timeString} <span class="logSuccess">✓ ${msg}</span>`;
                     } else if (type === 'error') {
-                        entry.innerHTML = `<span class="logError">✗ ${msg}</span>`;
+                        entry.innerHTML = `${timeString} <span class="logError">✗ ${msg}</span>`;
+                    } else if (type === 'warning') {
+                        entry.innerHTML = `${timeString} <span class="logWarning">⚠ ${msg}</span>`;
+                    } else if (type === 'raw') {
+                        // For raw data dumps
+                        entry.innerHTML = `${timeString} <pre>${JSON.stringify(msg, null, 2)}</pre>`;
                     } else {
-                        entry.textContent = msg;
+                        entry.textContent = `${timeString} ${msg}`;
                     }
                     
                     // Add to panel
@@ -177,6 +192,87 @@
                     // Scroll to bottom
                     this.logPanel.scrollTop = this.logPanel.scrollHeight;
                 }
+            },
+            
+            // Function to examine and log patch structure
+            inspectPatch: function(patch) {
+                this.log("--- PATCH INSPECTION ---");
+                
+                // Check if patch exists
+                if (!patch) {
+                    this.log("Patch object is null or undefined!", "error");
+                    return false;
+                }
+                
+                // Log patch type
+                this.log(`Patch type: ${typeof patch}`);
+                
+                // Check variables property
+                if (patch.variables) {
+                    this.log("Patch has 'variables' property");
+                    
+                    // Log available variables
+                    const varNames = Object.keys(patch.variables);
+                    this.log(`Found ${varNames.length} variables: ${varNames.join(', ')}`);
+                    
+                    // Check for Address variable specifically
+                    if (patch.variables.Address) {
+                        this.log("'Address' variable found!", "success");
+                        
+                        // Log variable properties
+                        this.log(`Address variable type: ${typeof patch.variables.Address}`);
+                        if (typeof patch.variables.Address.set === 'function') {
+                            this.log("Address variable has set() method", "success");
+                        } else {
+                            this.log("Address variable missing set() method", "error");
+                        }
+                        
+                        return true;
+                    } else if (patch.variables.address) {
+                        this.log("Found lowercase 'address' variable", "warning");
+                        return true;
+                    } else {
+                        this.log("No 'Address' variable found in patch", "error");
+                    }
+                } else {
+                    this.log("Patch is missing 'variables' property", "error");
+                }
+                
+                // Check getVar method
+                if (typeof patch.getVar === 'function') {
+                    this.log("Patch has getVar() method");
+                    
+                    try {
+                        const addrVar = patch.getVar("Address");
+                        if (addrVar) {
+                            this.log("Successfully retrieved 'Address' using getVar()", "success");
+                            return true;
+                        } else {
+                            this.log("getVar('Address') returned null/undefined", "error");
+                            
+                            // Try lowercase
+                            const addrVarLower = patch.getVar("address");
+                            if (addrVarLower) {
+                                this.log("Found lowercase 'address' using getVar()", "warning");
+                                return true;
+                            }
+                        }
+                    } catch (e) {
+                        this.log(`Error using getVar(): ${e.message}`, "error");
+                    }
+                } else {
+                    this.log("Patch is missing getVar() method", "error");
+                }
+                
+                // Try listing all methods
+                this.log("Patch methods:");
+                for (const prop in patch) {
+                    if (typeof patch[prop] === 'function') {
+                        this.log(` - ${prop}()`);
+                    }
+                }
+                
+                return false;
             }
         };
         
@@ -193,22 +289,32 @@
     <script type="text/javascript">
         function showError(initiator,...args) {
             CABLES.logErrorConsole("[" + initiator + "]", ...args);
+            LUKSO_INTEGRATION.log(`CABLES Error [${initiator}]: ${args.join(', ')}`, "error");
         }
 
         function patchInitialized(patch) {
-            LUKSO_INTEGRATION.log("Patch initialized - attempting to update address");
+            LUKSO_INTEGRATION.log("Patch initialized - examining patch structure");
+            LUKSO_INTEGRATION.inspectPatch(patch);
+            LUKSO_INTEGRATION.log("Attempting to update address after init");
             tryUpdateAddress(patch);
         }
 
         function patchFinishedLoading(patch) {
-            LUKSO_INTEGRATION.log("Patch finished loading - attempting to update address");
+            LUKSO_INTEGRATION.log("Patch finished loading - examining patch again");
+            LUKSO_INTEGRATION.inspectPatch(patch);
+            LUKSO_INTEGRATION.log("Attempting to update address after load");
             tryUpdateAddress(patch);
             
             // Also try again after a delay to ensure everything is fully loaded
-            setTimeout(() => tryUpdateAddress(patch), 1000);
+            setTimeout(() => {
+                LUKSO_INTEGRATION.log("Delayed address update attempt (1000ms)");
+                tryUpdateAddress(patch);
+            }, 1000);
         }
         
         function tryUpdateAddress(patch) {
+            LUKSO_INTEGRATION.log("----- UPDATING ADDRESS -----");
+            
             if (!LUKSO_INTEGRATION.upAddress) {
                 LUKSO_INTEGRATION.log("No UP address available yet", "error");
                 return;
@@ -217,32 +323,6 @@
             LUKSO_INTEGRATION.log(`Attempting to update Address variable with: ${LUKSO_INTEGRATION.upAddress}`);
             
             try {
-                // Try to get all variables to debug
-                LUKSO_INTEGRATION.log("Available variables in the patch:");
-                let variablesFound = 0;
-                
-                if (patch.variables) {
-                    for (let v in patch.variables) {
-                        LUKSO_INTEGRATION.log(` - ${v}`);
-                        variablesFound++;
-                    }
-                    
-                    if (variablesFound === 0) {
-                        LUKSO_INTEGRATION.log("No variables found using patch.variables", "error");
-                    }
-                } else {
-                    LUKSO_INTEGRATION.log("patch.variables is not available", "error");
-                }
-                
-                // Try using getVars() method if available
-                if (typeof patch.getVars === 'function') {
-                    const vars = patch.getVars();
-                    LUKSO_INTEGRATION.log("Variables from getVars():");
-                    for (let v of vars) {
-                        LUKSO_INTEGRATION.log(` - ${v}`);
-                    }
-                }
-                
                 // Try direct access to the Address variable
                 if (patch.variables && patch.variables.Address) {
                     patch.variables.Address.set(LUKSO_INTEGRATION.upAddress);
@@ -252,21 +332,29 @@
                 }
                 
                 // Try using getVar method
-                const addressVar = patch.getVar("Address");
-                if (addressVar) {
-                    addressVar.set(LUKSO_INTEGRATION.upAddress);
-                    LUKSO_INTEGRATION.log("Updated Address via patch.getVar", "success");
-                    LUKSO_INTEGRATION.addressUpdated = true;
-                    return true;
+                try {
+                    const addressVar = patch.getVar("Address");
+                    if (addressVar) {
+                        addressVar.set(LUKSO_INTEGRATION.upAddress);
+                        LUKSO_INTEGRATION.log("Updated Address via patch.getVar", "success");
+                        LUKSO_INTEGRATION.addressUpdated = true;
+                        return true;
+                    }
+                } catch (varErr) {
+                    LUKSO_INTEGRATION.log(`getVar error: ${varErr.message}`, "error");
                 }
                 
                 // Try with lowercase "address" as well
-                const addressVarLower = patch.getVar("address");
-                if (addressVarLower) {
-                    addressVarLower.set(LUKSO_INTEGRATION.upAddress);
-                    LUKSO_INTEGRATION.log("Updated 'address' (lowercase) via patch.getVar", "success");
-                    LUKSO_INTEGRATION.addressUpdated = true;
-                    return true;
+                try {
+                    const addressVarLower = patch.getVar("address");
+                    if (addressVarLower) {
+                        addressVarLower.set(LUKSO_INTEGRATION.upAddress);
+                        LUKSO_INTEGRATION.log("Updated 'address' (lowercase) via patch.getVar", "success");
+                        LUKSO_INTEGRATION.addressUpdated = true;
+                        return true;
+                    }
+                } catch (varErr) {
+                    LUKSO_INTEGRATION.log(`getVar(lowercase) error: ${varErr.message}`, "error");
                 }
                 
                 LUKSO_INTEGRATION.log("Could not find Address variable in patch", "error");
@@ -305,14 +393,40 @@
         // Create the LUKSO UP provider
         const provider = createClientUPProvider();
         const status = document.getElementById('status');
+        
+        // Log when provider is created
+        LUKSO_INTEGRATION.log("UP Provider created", "success");
 
         async function initWallet() {
+            LUKSO_INTEGRATION.log("==== initWallet started ====");
+            
             try {
-                // Initialize chain & accounts
-                const chainId = await provider.request({ method: 'eth_chainId' });
-                const accounts = await provider.request({ method: 'eth_accounts' });
+                // Log chain ID request
+                LUKSO_INTEGRATION.log("Requesting chain ID...");
+                let chainId;
+                try {
+                    chainId = await provider.request({ method: 'eth_chainId' });
+                    LUKSO_INTEGRATION.log(`Chain ID response: ${chainId} (decimal: ${parseInt(chainId, 16)})`, "success");
+                } catch (chainErr) {
+                    LUKSO_INTEGRATION.log(`Chain ID request failed: ${chainErr.message}`, "error");
+                    LUKSO_INTEGRATION.log(chainErr.stack || "No stack trace available");
+                }
+                
+                // Log accounts request
+                LUKSO_INTEGRATION.log("Requesting accounts...");
+                let accounts;
+                try {
+                    accounts = await provider.request({ method: 'eth_accounts' });
+                    LUKSO_INTEGRATION.log(`Accounts response received with ${accounts.length} accounts`);
+                    LUKSO_INTEGRATION.log("Raw accounts response:", "raw");
+                    LUKSO_INTEGRATION.log(accounts);
+                } catch (acctErr) {
+                    LUKSO_INTEGRATION.log(`Accounts request failed: ${acctErr.message}`, "error");
+                    LUKSO_INTEGRATION.log(acctErr.stack || "No stack trace available");
+                    accounts = [];
+                }
 
-                if (accounts.length) {
+                if (accounts && accounts.length) {
                     // Store the UP address
                     LUKSO_INTEGRATION.upAddress = accounts[0];
                     LUKSO_INTEGRATION.log(accounts[0], "address");
@@ -320,28 +434,68 @@
                     
                     // Try to update the patch if it's already loaded
                     if (window.CABLES && window.CABLES.patch) {
+                        LUKSO_INTEGRATION.log("CABLES patch detected, updating address...");
                         tryUpdateAddress(window.CABLES.patch);
                     } else {
-                        LUKSO_INTEGRATION.log("CABLES patch not ready yet. Address will be set once patch loads.");
+                        LUKSO_INTEGRATION.log("CABLES patch not ready yet. Address will be set once patch loads.", "warning");
                     }
                 } else {
                     status.textContent = 'Waiting for wallet...';
-                    LUKSO_INTEGRATION.log("No accounts found - waiting for wallet connection", "error");
+                    LUKSO_INTEGRATION.log("No accounts found - waiting for wallet connection", "warning");
+                    
+                    // Try requesting accounts with eth_requestAccounts method
+                    LUKSO_INTEGRATION.log("Trying eth_requestAccounts as fallback...");
+                    try {
+                        const requestedAccounts = await provider.request({ method: 'eth_requestAccounts' });
+                        LUKSO_INTEGRATION.log(`eth_requestAccounts returned ${requestedAccounts.length} accounts`);
+                        
+                        if (requestedAccounts.length > 0) {
+                            LUKSO_INTEGRATION.upAddress = requestedAccounts[0];
+                            LUKSO_INTEGRATION.log(requestedAccounts[0], "address");
+                            status.textContent = `Connected: ${requestedAccounts[0].substring(0, 6)}...${requestedAccounts[0].substring(requestedAccounts[0].length - 4)}`;
+                            
+                            // Try to update the patch
+                            if (window.CABLES && window.CABLES.patch) {
+                                tryUpdateAddress(window.CABLES.patch);
+                            }
+                        }
+                    } catch (reqErr) {
+                        LUKSO_INTEGRATION.log(`eth_requestAccounts failed: ${reqErr.message}`, "error");
+                    }
                 }
+                
+                LUKSO_INTEGRATION.log("==== initWallet completed ====");
             } catch (error) {
-                console.error("Error initializing wallet:", error);
+                LUKSO_INTEGRATION.log(`Error initializing wallet: ${error.message}`, "error");
+                LUKSO_INTEGRATION.log(error.stack || "No stack trace available");
                 status.textContent = 'Wallet connection error';
-                LUKSO_INTEGRATION.log(`Wallet error: ${error.message}`, "error");
             }
         }
 
-        // Set up event listeners for wallet changes
-        provider.on('accountsChanged', initWallet);
-        provider.on('chainChanged', initWallet);
-        provider.on('contextAccountsChanged', initWallet);
+        // Log when setting up event listeners
+        LUKSO_INTEGRATION.log("Setting up wallet event listeners");
+        
+        // Set up event listeners for wallet changes with logging
+        provider.on('accountsChanged', (accounts) => {
+            LUKSO_INTEGRATION.log(`accountsChanged event fired with ${accounts ? accounts.length : 0} accounts`);
+            initWallet();
+        });
+        
+        provider.on('chainChanged', (chainId) => {
+            LUKSO_INTEGRATION.log(`chainChanged event fired: ${chainId}`);
+            initWallet();
+        });
+        
+        provider.on('contextAccountsChanged', (accounts) => {
+            LUKSO_INTEGRATION.log(`contextAccountsChanged event fired with ${accounts ? accounts.length : 0} accounts`);
+            initWallet(); 
+        });
 
-        // Initialize wallet
-        initWallet();
+        // Initialize wallet with delay to ensure DOM is ready
+        setTimeout(() => {
+            LUKSO_INTEGRATION.log("Calling initWallet after short delay");
+            initWallet();
+        }, 100);
     </script>
 </body>
 </html>
