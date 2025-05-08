@@ -37,6 +37,60 @@
             font-size: 12px;
             z-index: 1000;
         }
+
+        /* Log panel styles */
+        #logPanel {
+            position: absolute;
+            left: 10px;
+            bottom: 10px;
+            width: 80%;
+            max-width: 600px;
+            max-height: 200px;
+            background-color: rgba(0,0,0,0.7);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none; /* Initially hidden */
+        }
+
+        .logEntry {
+            margin: 2px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .logAddress {
+            color: #ff0;
+            font-weight: bold;
+        }
+
+        .logSuccess {
+            color: #0f0;
+            font-weight: bold;
+        }
+
+        .logError {
+            color: #f00;
+            font-weight: bold;
+        }
+
+        #toggleLog {
+            position: absolute;
+            left: 10px;
+            bottom: 10px;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 1001;
+        }
     </style>
 
     <meta charset="utf-8">
@@ -55,15 +109,198 @@
     <canvas id="glcanvas" width="100vw" height="100vh" tabindex="1"></canvas>
     <div id="status">Loading...</div>
     
-    <!-- First load the patch.js file -->
+    <!-- Debug log panel -->
+    <button id="toggleLog">Show Debug Log</button>
+    <div id="logPanel"></div>
+    
+    <!-- Create global variables to store connection information -->
+    <script>
+        // Global namespace for our integration
+        window.LUKSO_INTEGRATION = {
+            upAddress: null,
+            addressUpdated: false,
+            debug: true,
+            
+            // Visual logging system
+            logPanel: null,
+            logEntries: [],
+            maxLogEntries: 50,
+            
+            // Initialize logging
+            initLogging: function() {
+                this.logPanel = document.getElementById('logPanel');
+                const toggleButton = document.getElementById('toggleLog');
+                
+                toggleButton.addEventListener('click', () => {
+                    if (this.logPanel.style.display === 'none' || !this.logPanel.style.display) {
+                        this.logPanel.style.display = 'block';
+                        toggleButton.textContent = 'Hide Debug Log';
+                    } else {
+                        this.logPanel.style.display = 'none';
+                        toggleButton.textContent = 'Show Debug Log';
+                    }
+                });
+                
+                // Add initial log entry
+                this.log("Logging system initialized");
+            },
+            
+            // Log a message to both console and visual log
+            log: function(msg, type = 'info') {
+                if (this.debug) console.log("[LUKSO]", msg);
+                
+                // Add to visual log
+                if (this.logPanel) {
+                    // Create log entry
+                    const entry = document.createElement('div');
+                    entry.className = 'logEntry';
+                    
+                    if (type === 'address') {
+                        entry.innerHTML = `<span class="logAddress">▶ UP Address: ${msg}</span>`;
+                    } else if (type === 'success') {
+                        entry.innerHTML = `<span class="logSuccess">✓ ${msg}</span>`;
+                    } else if (type === 'error') {
+                        entry.innerHTML = `<span class="logError">✗ ${msg}</span>`;
+                    } else {
+                        entry.textContent = msg;
+                    }
+                    
+                    // Add to panel
+                    this.logPanel.appendChild(entry);
+                    this.logEntries.push(entry);
+                    
+                    // Trim old entries
+                    if (this.logEntries.length > this.maxLogEntries) {
+                        this.logPanel.removeChild(this.logEntries.shift());
+                    }
+                    
+                    // Scroll to bottom
+                    this.logPanel.scrollTop = this.logPanel.scrollHeight;
+                }
+            }
+        };
+        
+        // Initialize logging system when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            LUKSO_INTEGRATION.initLogging();
+        });
+    </script>
+    
+    <!-- Load patch.js file -->
     <script type="text/javascript" src="js/patch.js"></script>
     
-    <!-- Then handle the LUKSO integration after patch.js is loaded -->
+    <!-- Standard cables initialization -->
+    <script type="text/javascript">
+        function showError(initiator,...args) {
+            CABLES.logErrorConsole("[" + initiator + "]", ...args);
+        }
+
+        function patchInitialized(patch) {
+            LUKSO_INTEGRATION.log("Patch initialized - attempting to update address");
+            tryUpdateAddress(patch);
+        }
+
+        function patchFinishedLoading(patch) {
+            LUKSO_INTEGRATION.log("Patch finished loading - attempting to update address");
+            tryUpdateAddress(patch);
+            
+            // Also try again after a delay to ensure everything is fully loaded
+            setTimeout(() => tryUpdateAddress(patch), 1000);
+        }
+        
+        function tryUpdateAddress(patch) {
+            if (!LUKSO_INTEGRATION.upAddress) {
+                LUKSO_INTEGRATION.log("No UP address available yet", "error");
+                return;
+            }
+            
+            LUKSO_INTEGRATION.log(`Attempting to update Address variable with: ${LUKSO_INTEGRATION.upAddress}`);
+            
+            try {
+                // Try to get all variables to debug
+                LUKSO_INTEGRATION.log("Available variables in the patch:");
+                let variablesFound = 0;
+                
+                if (patch.variables) {
+                    for (let v in patch.variables) {
+                        LUKSO_INTEGRATION.log(` - ${v}`);
+                        variablesFound++;
+                    }
+                    
+                    if (variablesFound === 0) {
+                        LUKSO_INTEGRATION.log("No variables found using patch.variables", "error");
+                    }
+                } else {
+                    LUKSO_INTEGRATION.log("patch.variables is not available", "error");
+                }
+                
+                // Try using getVars() method if available
+                if (typeof patch.getVars === 'function') {
+                    const vars = patch.getVars();
+                    LUKSO_INTEGRATION.log("Variables from getVars():");
+                    for (let v of vars) {
+                        LUKSO_INTEGRATION.log(` - ${v}`);
+                    }
+                }
+                
+                // Try direct access to the Address variable
+                if (patch.variables && patch.variables.Address) {
+                    patch.variables.Address.set(LUKSO_INTEGRATION.upAddress);
+                    LUKSO_INTEGRATION.log("Updated Address via patch.variables", "success");
+                    LUKSO_INTEGRATION.addressUpdated = true;
+                    return true;
+                }
+                
+                // Try using getVar method
+                const addressVar = patch.getVar("Address");
+                if (addressVar) {
+                    addressVar.set(LUKSO_INTEGRATION.upAddress);
+                    LUKSO_INTEGRATION.log("Updated Address via patch.getVar", "success");
+                    LUKSO_INTEGRATION.addressUpdated = true;
+                    return true;
+                }
+                
+                // Try with lowercase "address" as well
+                const addressVarLower = patch.getVar("address");
+                if (addressVarLower) {
+                    addressVarLower.set(LUKSO_INTEGRATION.upAddress);
+                    LUKSO_INTEGRATION.log("Updated 'address' (lowercase) via patch.getVar", "success");
+                    LUKSO_INTEGRATION.addressUpdated = true;
+                    return true;
+                }
+                
+                LUKSO_INTEGRATION.log("Could not find Address variable in patch", "error");
+                return false;
+            } catch (err) {
+                LUKSO_INTEGRATION.log(`Error updating address: ${err.message}`, "error");
+                return false;
+            }
+        }
+
+        document.addEventListener("CABLES.jsLoaded", function (event) {
+            LUKSO_INTEGRATION.log("CABLES.jsLoaded event fired");
+            
+            CABLES.patch = new CABLES.Patch({
+                patch: CABLES.exportedPatch,
+                prefixAssetPath: "",
+                assetPath: "assets/",
+                jsPath: "js/",
+                glCanvasId: "glcanvas",
+                glCanvasResizeToWindow: true,
+                onError: showError,
+                onPatchLoaded: patchInitialized,
+                onFinishedLoading: patchFinishedLoading,
+                canvas: {alpha:true, premultipliedAlpha:true}
+            });
+        });
+
+        // disable rubberband effect on mobile devices
+        document.getElementById('glcanvas').addEventListener('touchmove', (e)=>{ e.preventDefault(); }, false);
+    </script>
+    
+    <!-- LUKSO wallet integration -->
     <script type="module">
         import { createClientUPProvider } from '@lukso/up-provider';
-
-        // Global variable to store the UP address
-        window.upAddress = null;
         
         // Create the LUKSO UP provider
         const provider = createClientUPProvider();
@@ -77,63 +314,24 @@
 
                 if (accounts.length) {
                     // Store the UP address
-                    window.upAddress = accounts[0];
-                    status.textContent = `Connected: ${window.upAddress.substring(0, 6)}...${window.upAddress.substring(window.upAddress.length - 4)}`;
+                    LUKSO_INTEGRATION.upAddress = accounts[0];
+                    LUKSO_INTEGRATION.log(accounts[0], "address");
+                    status.textContent = `Connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`;
                     
-                    // Update the patch if it's already loaded
-                    attemptUpdatePatchAddress();
+                    // Try to update the patch if it's already loaded
+                    if (window.CABLES && window.CABLES.patch) {
+                        tryUpdateAddress(window.CABLES.patch);
+                    } else {
+                        LUKSO_INTEGRATION.log("CABLES patch not ready yet. Address will be set once patch loads.");
+                    }
                 } else {
                     status.textContent = 'Waiting for wallet...';
+                    LUKSO_INTEGRATION.log("No accounts found - waiting for wallet connection", "error");
                 }
             } catch (error) {
                 console.error("Error initializing wallet:", error);
                 status.textContent = 'Wallet connection error';
-            }
-        }
-
-        function attemptUpdatePatchAddress() {
-            console.log("Attempting to update patch address...");
-            // Try multiple times with increasing delays to ensure the patch is fully loaded
-            setTimeout(() => updatePatchAddress(), 500);  // Try after 0.5s
-            setTimeout(() => updatePatchAddress(), 1500); // Try again after 1.5s
-            setTimeout(() => updatePatchAddress(), 3000); // Try again after 3s
-        }
-
-        function updatePatchAddress() {
-            // Check if patch is initialized and address variable exists
-            if (window.upAddress && window.CABLES && window.CABLES.patch) {
-                console.log("CABLES patch found, looking for Address variable");
-                
-                // Look for the variable with the name "Address" (without the hash)
-                const addressVar = window.CABLES.patch.getVar("Address");
-                
-                if (addressVar) {
-                    // Update the Address variable
-                    addressVar.set(window.upAddress);
-                    console.log("✅ Successfully updated patch with UP address:", window.upAddress);
-                    
-                    // If needed, you can also try to trigger specific operators
-                    const updateOp = window.CABLES.patch.getOpById("update");
-                    if (updateOp) {
-                        updateOp.trigger();
-                        console.log("Triggered update operator");
-                    }
-                } else {
-                    console.log("⚠️ Variable 'Address' not found in patch. Available variables:");
-                    // List all available variables to help debugging
-                    if (window.CABLES.patch.getVars) {
-                        const vars = window.CABLES.patch.getVars();
-                        console.log(vars);
-                    }
-                }
-            } else {
-                console.log("Waiting for CABLES patch to initialize...");
-                if (window.upAddress) {
-                    console.log("UP Address is available:", window.upAddress);
-                }
-                if (window.CABLES) {
-                    console.log("CABLES is available but patch may not be initialized yet");
-                }
+                LUKSO_INTEGRATION.log(`Wallet error: ${error.message}`, "error");
             }
         }
 
@@ -144,49 +342,6 @@
 
         // Initialize wallet
         initWallet();
-    </script>
-
-    <script type="text/javascript">
-        function showError(initiator,...args) {
-            CABLES.logErrorConsole("[" + initiator + "]", ...args);
-        }
-
-        function patchInitialized(patch) {
-            // Patch object is accessible, attempt to update the address
-            console.log("Patch initialized - attempting to update address");
-            if (window.updatePatchAddress) {
-                window.updatePatchAddress();
-            }
-        }
-
-        function patchFinishedLoading(patch) {
-            // Patch is fully loaded, ensure address is set
-            console.log("Patch finished loading - attempting to update address");
-            if (window.updatePatchAddress) {
-                window.updatePatchAddress();
-            }
-        }
-
-        document.addEventListener("CABLES.jsLoaded", function (event) {
-            console.log("CABLES.jsLoaded event fired - creating patch");
-            window.CABLES = window.CABLES || {};
-            
-            CABLES.patch = new CABLES.Patch({
-                patch: CABLES.exportedPatch,
-                "prefixAssetPath": "",
-                "assetPath": "assets/",
-                "jsPath": "js/",
-                "glCanvasId": "glcanvas",
-                "glCanvasResizeToWindow": true,
-                "onError": showError,
-                "onPatchLoaded": patchInitialized,
-                "onFinishedLoading": patchFinishedLoading,
-                "canvas": {"alpha":true, "premultipliedAlpha":true } // make canvas transparent
-            });
-        });
-
-        // disable rubberband effect on mobile devices
-        document.getElementById('glcanvas').addEventListener('touchmove', (e)=>{ e.preventDefault(); }, false);
     </script>
 </body>
 </html>
