@@ -125,7 +125,8 @@
         window.LUKSO_INTEGRATION = {
             upAddress: null,
             addressUpdated: false,
-            debug: true,
+            debug: false,              // Controls console logging
+            showDebugUI: false,       // MANUAL FLAG: Set to true to show debug UI elements
             initTime: Date.now(),
             isInIframe: isInIframe,
             provider: null,
@@ -143,24 +144,34 @@
                 console.log("[LUKSO] Initializing logging system");
                 this.logPanel = document.getElementById('logPanel');
                 const toggleButton = document.getElementById('toggleLog');
+                const statusElement = document.getElementById('status');
                 
-                if (this.logPanel && toggleButton) {
-                    toggleButton.addEventListener('click', () => {
-                        if (this.logPanel.style.display === 'none') {
-                            this.logPanel.style.display = 'block';
-                            toggleButton.textContent = 'Hide Debug Log';
-                        } else {
-                            this.logPanel.style.display = 'none';
-                            toggleButton.textContent = 'Show Debug Log';
-                        }
-                    });
-                    
-                    // Add initial log entries
-                    this.log(`Logging system initialized (${new Date().toISOString()})`);
-                    this.log(`Running in iframe: ${this.isInIframe}`, this.isInIframe ? "warning" : "info");
-                    this.log("Starting provider detection loop");
+                // Handle UI visibility based on debug flag
+                if (!this.showDebugUI) {
+                    // Hide debug UI elements when debug is disabled
+                    if (this.logPanel) this.logPanel.style.display = 'none';
+                    if (toggleButton) toggleButton.style.display = 'none';
+                    if (statusElement) statusElement.style.display = 'none';
                 } else {
-                    console.error("[LUKSO] Failed to initialize logging - DOM elements not found");
+                    // Show and setup debug UI elements
+                    if (this.logPanel && toggleButton) {
+                        toggleButton.addEventListener('click', () => {
+                            if (this.logPanel.style.display === 'none') {
+                                this.logPanel.style.display = 'block';
+                                toggleButton.textContent = 'Hide Debug Log';
+                            } else {
+                                this.logPanel.style.display = 'none';
+                                toggleButton.textContent = 'Show Debug Log';
+                            }
+                        });
+                        
+                        // Add initial log entries
+                        this.log(`Logging system initialized (${new Date().toISOString()})`);
+                        this.log(`Running in iframe: ${this.isInIframe}`, this.isInIframe ? "warning" : "info");
+                        this.log("Starting provider detection loop");
+                    } else {
+                        console.error("[LUKSO] Failed to initialize logging - DOM elements not found");
+                    }
                 }
             },
             
@@ -172,8 +183,8 @@
                 
                 if (this.debug) console.log(`[LUKSO] ${timeString} ${msg}`);
                 
-                // Add to visual log
-                if (this.logPanel) {
+                // Add to visual log only if debug UI is enabled
+                if (this.showDebugUI && this.logPanel) {
                     // Create log entry
                     const entry = document.createElement('div');
                     entry.className = 'logEntry';
@@ -247,9 +258,11 @@
                         clearInterval(this.providerDetectionInterval);
                         
                         // Update status to show error
-                        const status = document.getElementById('status');
-                        if (status) {
-                            status.textContent = 'LUKSO provider not detected';
+                        if (this.showDebugUI) {
+                            const status = document.getElementById('status');
+                            if (status) {
+                                status.textContent = 'LUKSO provider not detected';
+                            }
                         }
                     }
                 }, 500); // Check every 500ms
@@ -374,8 +387,8 @@
                         this.upAddress = accounts[0];
                         this.log(accounts[0], "address");
                         
-                        // Update status
-                        if (status) {
+                        // Update status only if debug UI is enabled
+                        if (this.showDebugUI && status) {
                             status.textContent = `Connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`;
                         }
                         
@@ -388,7 +401,7 @@
                         }
                     } else {
                         this.log("No accounts available", "warning");
-                        if (status) {
+                        if (this.showDebugUI && status) {
                             status.textContent = 'Waiting for wallet...';
                         }
                     }
@@ -396,7 +409,7 @@
                     this.log("==== initWallet completed ====");
                 } catch (error) {
                     this.log(`Error in initWallet: ${error.message}`, "error");
-                    if (status) {
+                    if (this.showDebugUI && status) {
                         status.textContent = 'Wallet error';
                     }
                 }
