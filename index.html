@@ -543,48 +543,32 @@
             LUKSO_INTEGRATION.log("----- UPDATING ADDRESS -----");
             
             if (!LUKSO_INTEGRATION.upAddress) {
-                LUKSO_INTEGRATION.log("No UP address available yet", "error");
+                LUKSO_INTEGRATION.log("No UP address available yet", "warning");
                 return;
             }
             
             LUKSO_INTEGRATION.log(`Attempting to update Address variable with: ${LUKSO_INTEGRATION.upAddress}`);
             
             try {
-                // Try using getVar method (which we know works from the logs)
-                try {
-                    const addressVar = patch.getVar("Address");
-                    if (addressVar) {
-                        addressVar.set(LUKSO_INTEGRATION.upAddress);
-                        LUKSO_INTEGRATION.log("Updated Address via patch.getVar", "success");
+                // Use the global CABLES.patch object to set the variable directly
+                if (window.CABLES && window.CABLES.patch) {
+                    // Try with both capitalizations to handle potential case sensitivity
+                    try {
+                        CABLES.patch.setVariable('Address', LUKSO_INTEGRATION.upAddress);
+                        LUKSO_INTEGRATION.log("Updated Address via CABLES.patch.setVariable", "success");
                         LUKSO_INTEGRATION.addressUpdated = true;
+                        
+                        // Also try lowercase version just in case
+                        CABLES.patch.setVariable('address', LUKSO_INTEGRATION.upAddress);
+                        
                         return true;
+                    } catch (setErr) {
+                        LUKSO_INTEGRATION.log(`setVariable error: ${setErr.message}`, "error");
                     }
-                } catch (varErr) {
-                    LUKSO_INTEGRATION.log(`getVar error: ${varErr.message}`, "error");
+                } else {
+                    LUKSO_INTEGRATION.log("CABLES.patch not available yet", "warning");
                 }
                 
-                // Try with lowercase "address" as well
-                try {
-                    const addressVarLower = patch.getVar("address");
-                    if (addressVarLower) {
-                        addressVarLower.set(LUKSO_INTEGRATION.upAddress);
-                        LUKSO_INTEGRATION.log("Updated 'address' (lowercase) via patch.getVar", "success");
-                        LUKSO_INTEGRATION.addressUpdated = true;
-                        return true;
-                    }
-                } catch (varErr) {
-                    LUKSO_INTEGRATION.log(`getVar(lowercase) error: ${varErr.message}`, "error");
-                }
-                
-                // Try direct access to the Address variable
-                if (patch.variables && patch.variables.Address) {
-                    patch.variables.Address.set(LUKSO_INTEGRATION.upAddress);
-                    LUKSO_INTEGRATION.log("Updated Address via patch.variables", "success");
-                    LUKSO_INTEGRATION.addressUpdated = true;
-                    return true;
-                }
-                
-                LUKSO_INTEGRATION.log("Could not find Address variable in patch", "error");
                 return false;
             } catch (err) {
                 LUKSO_INTEGRATION.log(`Error updating address: ${err.message}`, "error");
