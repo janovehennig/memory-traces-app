@@ -106,7 +106,13 @@
     <meta name="description" content="made with cables"/>
     
     <!-- Load LUKSO UP Provider from CDN -->
-    <script src="https://unpkg.com/@lukso/up-provider@latest/dist/index.js"></script>
+    <script type="module">
+        // Import UP Provider as ES module
+        import { createClientUPProvider } from 'https://unpkg.com/@lukso/up-provider@latest/dist/index.esm.js';
+        
+        // Make it available globally
+        window.luksoUPProvider = { createClientUPProvider };
+    </script>
 </head>
 <body>
     <canvas id="glcanvas" width="100vw" height="100vh" tabindex="1"></canvas>
@@ -128,8 +134,8 @@
         window.LUKSO_INTEGRATION = {
             upAddress: null,
             addressUpdated: false,
-            debug: false,              // Controls console logging
-            showDebugUI: false,       // MANUAL FLAG: Set to true to show debug UI elements
+            debug: true,               // Controls console logging
+            showDebugUI: true,         // MANUAL FLAG: Set to true to show debug UI elements
             initTime: Date.now(),
             isInIframe: isInIframe,
             provider: null,
@@ -226,12 +232,27 @@
                 this.log("Initializing UP Provider");
                 
                 try {
+                    // Check if UP Provider is available
+                    this.log(`window.luksoUPProvider available: ${typeof window.luksoUPProvider !== 'undefined'}`);
+                    
+                    if (typeof window.luksoUPProvider !== 'undefined') {
+                        this.log(`createClientUPProvider available: ${typeof window.luksoUPProvider.createClientUPProvider === 'function'}`);
+                    }
+                    
                     // Create UP Provider instance
                     if (typeof window.luksoUPProvider !== 'undefined' && window.luksoUPProvider.createClientUPProvider) {
                         this.provider = window.luksoUPProvider.createClientUPProvider();
                         this.log("UP Provider created successfully", "success");
+                        
+                        // Log provider details
+                        this.log(`Provider type: ${typeof this.provider}`);
+                        this.log(`Provider has 'on' method: ${typeof this.provider.on === 'function'}`);
                     } else {
-                        this.log("UP Provider library not loaded", "error");
+                        this.log("UP Provider library not loaded - retrying in 1 second", "warning");
+                        // Retry after a delay
+                        setTimeout(() => {
+                            this.initializeUPProvider();
+                        }, 1000);
                         return;
                     }
                     
@@ -250,6 +271,7 @@
                     
                 } catch (error) {
                     this.log(`Error initializing UP Provider: ${error.message}`, "error");
+                    this.log(`Error stack: ${error.stack}`, "error");
                 }
             },
             
@@ -405,10 +427,10 @@
             console.log("[LUKSO] DOM Content Loaded event fired");
             LUKSO_INTEGRATION.initLogging();
             
-            // Initialize UP Provider after a short delay
+            // Initialize UP Provider after a delay to ensure module is loaded
             setTimeout(() => {
                 LUKSO_INTEGRATION.initializeUPProvider();
-            }, 100);
+            }, 500);
         });
     </script>
     
