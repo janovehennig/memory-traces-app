@@ -104,6 +104,9 @@
     <meta itemprop="description" content="made with cables">
     <meta itemprop="image" content="screenshot.png">
     <meta name="description" content="made with cables"/>
+    
+    <!-- Load LUKSO UP Provider from CDN -->
+    <script src="https://unpkg.com/@lukso/up-provider@latest/dist/index.js"></script>
 </head>
 <body>
     <canvas id="glcanvas" width="100vw" height="100vh" tabindex="1"></canvas>
@@ -130,9 +133,9 @@
             initTime: Date.now(),
             isInIframe: isInIframe,
             provider: null,
-            providerDetectionInterval: null,
-            providerDetectionAttempts: 0,
-            maxProviderDetectionAttempts: 30, // about 15 seconds at 500ms intervals
+            accounts: [],              // UP Provider accounts
+            contextAccounts: [],       // UP Provider context accounts
+            isConnected: false,        // Connection state
             
             // Visual logging system
             logPanel: null,
@@ -218,93 +221,36 @@
                 }
             },
             
-            // Function to start detecting browser extension provider
-            startProviderDetection: function() {
-                // Clear any existing interval
-                if (this.providerDetectionInterval) {
-                    clearInterval(this.providerDetectionInterval);
-                }
+            // Function to initialize UP Provider
+            initializeUPProvider: function() {
+                this.log("Initializing UP Provider");
                 
-                this.providerDetectionAttempts = 0;
-                this.log("Starting provider detection loop");
-                
-                this.providerDetectionInterval = setInterval(() => {
-                    this.providerDetectionAttempts++;
-                    
-                    // Check for LUKSO-specific provider first
-                    if (window.lukso) {
-                        this.log("Found window.lukso provider", "success");
-                        clearInterval(this.providerDetectionInterval);
-                        this.useProvider(window.lukso);
-                        return;
-                    }
-                    
-                    // Check for EIP-1193 provider (which might be injected by LUKSO extension)
-                    if (window.ethereum) {
-                        this.log("Found window.ethereum provider", "success");
-                        clearInterval(this.providerDetectionInterval);
-                        this.useProvider(window.ethereum);
-                        return;
-                    }
-                    
-                    // Log every 5 attempts
-                    if (this.providerDetectionAttempts % 5 === 0) {
-                        this.log(`Provider not detected after ${this.providerDetectionAttempts} attempts`);
-                    }
-                    
-                    // Give up after max attempts
-                    if (this.providerDetectionAttempts >= this.maxProviderDetectionAttempts) {
-                        this.log("Max provider detection attempts reached. Giving up.", "error");
-                        clearInterval(this.providerDetectionInterval);
-                        
-                        // Update status to show error
-                        if (this.showDebugUI) {
-                            const status = document.getElementById('status');
-                            if (status) {
-                                status.textContent = 'LUKSO provider not detected';
-                            }
-                        }
-                    }
-                }, 500); // Check every 500ms
-            },
-            
-            // Function to use the detected provider
-            useProvider: function(provider) {
-                this.provider = provider;
-                this.log("Provider detected and stored");
-                
-                // Log provider properties
                 try {
-                    this.log("Provider type: " + (typeof provider));
-                    
-                    if (provider.isLukso) {
-                        this.log("Provider identified as LUKSO provider", "success");
+                    // Create UP Provider instance
+                    if (typeof window.luksoUPProvider !== 'undefined' && window.luksoUPProvider.createClientUPProvider) {
+                        this.provider = window.luksoUPProvider.createClientUPProvider();
+                        this.log("UP Provider created successfully", "success");
+                    } else {
+                        this.log("UP Provider library not loaded", "error");
+                        return;
                     }
                     
-                    if (provider.isMetaMask) {
-                        this.log("Provider identified as MetaMask", "warning");
-                    }
+                    // Get initial accounts
+                    this.accounts = this.provider.accounts || [];
+                    this.contextAccounts = this.provider.contextAccounts || [];
                     
-                    // List available methods
-                    const methods = [];
-                    for (const key in provider) {
-                        if (typeof provider[key] === 'function') {
-                            methods.push(key);
-                        }
-                    }
+                    this.log(`Initial accounts: ${this.accounts.length}`);
+                    this.log(`Initial context accounts: ${this.contextAccounts.length}`);
                     
-                    if (methods.length > 0) {
-                        this.log(`Provider has ${methods.length} methods: ${methods.join(', ')}`);
-                    }
-                } catch (err) {
-                    this.log(`Error analyzing provider: ${err.message}`, "error");
+                    // Setup event listeners
+                    this.setupProviderEvents();
+                    
+                    // Update connection state
+                    this.updateConnectionState();
+                    
+                } catch (error) {
+                    this.log(`Error initializing UP Provider: ${error.message}`, "error");
                 }
-                
-                // Setup event listeners
-                this.setupProviderEvents();
-                
-                // Initialize the wallet
-                this.initWallet();
             },
             
             // Setup provider event listeners
@@ -313,106 +259,71 @@
                 
                 try {
                     // Account changes
-                    if (this.provider.on) {
-                        this.provider.on('accountsChanged', (accounts) => {
-                            this.log(`accountsChanged event: ${accounts ? accounts.length : 0} accounts`);
-                            this.initWallet();
-                        });
-                        
-                        // Chain changes
-                        this.provider.on('chainChanged', (chainId) => {
-                            this.log(`chainChanged event: ${chainId}`);
-                            this.initWallet();
-                        });
-                        
-                        // Check for LUKSO-specific events
-                        this.provider.on('contextAccountsChanged', (accounts) => {
-                            this.log(`contextAccountsChanged event: ${accounts ? accounts.length : 0} accounts`);
-                            this.initWallet();
-                        });
-                        
-                        this.log("Provider event listeners setup successfully", "success");
-                    } else {
-                        this.log("Provider does not support events (no .on method)", "warning");
-                    }
+                    this.provider.on('accountsChanged', (_accounts) => {
+                        this.log(`accountsChanged event: ${_accounts ? _accounts.length : 0} accounts`);
+                        this.accounts = _accounts || [];
+                        this.updateConnectionState();
+                    });
+                    
+                    // Context account changes
+                    this.provider.on('contextAccountsChanged', (_accounts) => {
+                        this.log(`contextAccountsChanged event: ${_accounts ? _accounts.length : 0} accounts`);
+                        this.contextAccounts = _accounts || [];
+                        this.updateConnectionState();
+                    });
+                    
+                    // Chain changes
+                    this.provider.on('chainChanged', (chainId) => {
+                        this.log(`chainChanged event: ${chainId}`);
+                        // Optionally handle chain changes
+                    });
+                    
+                    this.log("Provider event listeners setup successfully", "success");
                 } catch (err) {
                     this.log(`Error setting up provider events: ${err.message}`, "error");
                 }
             },
             
-            // Initialize wallet
-            initWallet: async function() {
-                this.log("==== initWallet started ====");
-                
-                if (!this.provider) {
-                    this.log("No provider available", "error");
-                    return;
-                }
+            // Update connection state based on accounts
+            updateConnectionState: function() {
+                this.log("==== updateConnectionState started ====");
                 
                 const status = document.getElementById('status');
                 
-                try {
-                    // Try to get chain ID
-                    try {
-                        const chainId = await this.provider.request({ method: 'eth_chainId' });
-                        this.log(`Chain ID: ${chainId} (decimal: ${parseInt(chainId, 16)})`, "success");
-                    } catch (chainError) {
-                        this.log(`Error getting chain ID: ${chainError.message}`, "error");
-                    }
+                // Connection requires both accounts and contextAccounts
+                const wasConnected = this.isConnected;
+                this.isConnected = this.accounts.length > 0 && this.contextAccounts.length > 0;
+                
+                // Update address
+                const previousAddress = this.upAddress;
+                this.upAddress = this.isConnected ? this.accounts[0] : null;
+                
+                // Log state changes
+                if (this.isConnected) {
+                    this.log(`Connected with ${this.accounts.length} accounts`, "success");
+                    this.log(this.upAddress, "address");
                     
-                    // Try to get accounts with eth_accounts first (non-intrusive)
-                    let accounts = [];
-                    try {
-                        this.log("Requesting accounts with eth_accounts");
-                        accounts = await this.provider.request({ method: 'eth_accounts' });
-                        this.log(`eth_accounts returned ${accounts.length} accounts`);
-                    } catch (accountsError) {
-                        this.log(`Error getting accounts: ${accountsError.message}`, "error");
-                    }
-                    
-                    // If no accounts, try eth_requestAccounts (shows prompt)
-                    if (!accounts || accounts.length === 0) {
-                        try {
-                            this.log("No accounts found, trying eth_requestAccounts");
-                            accounts = await this.provider.request({ method: 'eth_requestAccounts' });
-                            this.log(`eth_requestAccounts returned ${accounts.length} accounts`);
-                        } catch (requestError) {
-                            this.log(`Error requesting accounts: ${requestError.message}`, "error");
-                        }
-                    }
-                    
-                    // Process accounts if we got any
-                    if (accounts && accounts.length > 0) {
-                        // Save the first account as the UP address
-                        this.upAddress = accounts[0];
-                        this.log(accounts[0], "address");
-                        
-                        // Update status only if debug UI is enabled
-                        if (this.showDebugUI && status) {
-                            status.textContent = `Connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(accounts[0].length - 4)}`;
-                        }
-                        
-                        // Try to update the CABLES patch
-                        if (window.CABLES && window.CABLES.patch) {
-                            this.log("CABLES patch available, updating address");
-                            tryUpdateAddress(window.CABLES.patch);
-                        } else {
-                            this.log("CABLES patch not available yet", "warning");
-                        }
-                    } else {
-                        this.log("No accounts available", "warning");
-                        if (this.showDebugUI && status) {
-                            status.textContent = 'Waiting for wallet...';
-                        }
-                    }
-                    
-                    this.log("==== initWallet completed ====");
-                } catch (error) {
-                    this.log(`Error in initWallet: ${error.message}`, "error");
+                    // Update status only if debug UI is enabled
                     if (this.showDebugUI && status) {
-                        status.textContent = 'Wallet error';
+                        status.textContent = `Connected: ${this.upAddress.substring(0, 6)}...${this.upAddress.substring(this.upAddress.length - 4)}`;
+                    }
+                    
+                    // Update CABLES patch if address changed
+                    if (previousAddress !== this.upAddress && window.CABLES && window.CABLES.patch) {
+                        this.log("Address changed, updating CABLES patch");
+                        tryUpdateAddress(window.CABLES.patch);
+                    }
+                } else {
+                    this.log("Not connected (waiting for both accounts and context)", "warning");
+                    if (this.showDebugUI && status) {
+                        status.textContent = 'Waiting for connection...';
                     }
                 }
+                
+                // Log connection state details
+                this.log(`Accounts: ${this.accounts.length}, Context: ${this.contextAccounts.length}, Connected: ${this.isConnected}`);
+                
+                this.log("==== updateConnectionState completed ====");
             },
             
             // Function to examine and log patch structure
@@ -494,9 +405,9 @@
             console.log("[LUKSO] DOM Content Loaded event fired");
             LUKSO_INTEGRATION.initLogging();
             
-            // Start provider detection after a short delay
+            // Initialize UP Provider after a short delay
             setTimeout(() => {
-                LUKSO_INTEGRATION.startProviderDetection();
+                LUKSO_INTEGRATION.initializeUPProvider();
             }, 100);
         });
     </script>
