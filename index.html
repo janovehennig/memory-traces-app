@@ -105,13 +105,10 @@
     <meta itemprop="image" content="screenshot.png">
     <meta name="description" content="made with cables"/>
     
-    <!-- Load LUKSO UP Provider from CDN -->
-    <script type="module">
-        // Import UP Provider as ES module
-        import { createClientUPProvider } from 'https://unpkg.com/@lukso/up-provider@latest/dist/index.esm.js';
-        
-        // Make it available globally
-        window.luksoUPProvider = { createClientUPProvider };
+    <!-- Load LUKSO UP Provider -->
+    <script>
+        // We'll load the UP Provider dynamically in the main script
+        console.log('[LUKSO] UP Provider will be loaded dynamically');
     </script>
 </head>
 <body>
@@ -227,20 +224,49 @@
                 }
             },
             
+            // Track retry attempts
+            upProviderRetries: 0,
+            maxUpProviderRetries: 10,
+            
             // Function to initialize UP Provider
-            initializeUPProvider: function() {
+            initializeUPProvider: async function() {
                 this.log("Initializing UP Provider");
                 
                 try {
-                    // Check if UP Provider is available
-                    this.log(`window.luksoUPProvider available: ${typeof window.luksoUPProvider !== 'undefined'}`);
-                    
-                    if (typeof window.luksoUPProvider !== 'undefined') {
-                        this.log(`createClientUPProvider available: ${typeof window.luksoUPProvider.createClientUPProvider === 'function'}`);
+                    // Try to dynamically import the UP Provider
+                    if (!window.luksoUPProvider) {
+                        this.log("Attempting to dynamically import UP Provider...");
+                        try {
+                            const upProviderModule = await import('https://unpkg.com/@lukso/up-provider@latest/dist/index.mjs');
+                            window.luksoUPProvider = upProviderModule;
+                            this.log("UP Provider module imported successfully", "success");
+                        } catch (importError) {
+                            this.log(`Failed to import UP Provider: ${importError.message}`, "error");
+                            
+                            // Try alternative: assume UP Provider is pre-loaded by parent
+                            if (window.createClientUPProvider) {
+                                this.log("Found global createClientUPProvider function", "success");
+                                window.luksoUPProvider = { createClientUPProvider: window.createClientUPProvider };
+                            } else if (window.parent && window.parent !== window && window.parent.luksoUPProvider) {
+                                this.log("Found UP Provider in parent window", "success");
+                                window.luksoUPProvider = window.parent.luksoUPProvider;
+                            } else {
+                                this.log("UP Provider not available in any form", "error");
+                                this.log("This mini-app must be loaded in a LUKSO-compatible iframe environment", "error");
+                                
+                                if (this.showDebugUI) {
+                                    const status = document.getElementById('status');
+                                    if (status) {
+                                        status.textContent = 'UP Provider not available';
+                                    }
+                                }
+                                return;
+                            }
+                        }
                     }
                     
                     // Create UP Provider instance
-                    if (typeof window.luksoUPProvider !== 'undefined' && window.luksoUPProvider.createClientUPProvider) {
+                    if (window.luksoUPProvider && window.luksoUPProvider.createClientUPProvider) {
                         this.provider = window.luksoUPProvider.createClientUPProvider();
                         this.log("UP Provider created successfully", "success");
                         
@@ -248,11 +274,7 @@
                         this.log(`Provider type: ${typeof this.provider}`);
                         this.log(`Provider has 'on' method: ${typeof this.provider.on === 'function'}`);
                     } else {
-                        this.log("UP Provider library not loaded - retrying in 1 second", "warning");
-                        // Retry after a delay
-                        setTimeout(() => {
-                            this.initializeUPProvider();
-                        }, 1000);
+                        this.log("createClientUPProvider function not available", "error");
                         return;
                     }
                     
